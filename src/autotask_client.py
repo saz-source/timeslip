@@ -44,6 +44,7 @@ class AutotaskClient:
         self._config = config
         self._base = config.autotask_base_url.rstrip("/") + "/v1.0"
         self._session = self._build_session()
+        self._all_companies: list | None = None
 
     # ------------------------------------------------------------------
     # Bootstrap
@@ -117,15 +118,17 @@ class AutotaskClient:
         except Exception:
             results = []
 
-        # 2. Fetch all companies for initials/fuzzy match
+        # 2. Fuzzy match against full company list (fetched once per session)
         try:
-            resp2 = self._query(
-                "Companies",
-                [{"field": "isActive", "op": "eq", "value": True}],
-                max_records=500,
-            )
+            if self._all_companies is None:
+                resp2 = self._query(
+                    "Companies",
+                    [{"field": "isActive", "op": "eq", "value": True}],
+                    max_records=500,
+                )
+                self._all_companies = resp2.get("items", [])
             existing_ids = {i["id"] for i in results}
-            for item in resp2.get("items", []):
+            for item in self._all_companies:
                 if item["id"] not in existing_ids:
                     score = self._match_score(item.get("companyName", ""), query)
                     if score >= 0.35:

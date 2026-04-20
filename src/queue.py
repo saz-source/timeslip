@@ -7,6 +7,7 @@ import logging
 import uuid
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,17 @@ class OfflineQueue:
 
     def remove(self, item_id: str) -> None:
         self._items = [i for i in self._items if i.get("id") != item_id]
+        self._save()
+
+    def update_status(self, item_id: str, status: str, error: Optional[str] = None) -> None:
+        for item in self._items:
+            if item.get("id") == item_id:
+                item["status"] = status
+                if error is not None:
+                    item["last_error"] = error
+                elif status == "retrying" and "last_error" in item:
+                    del item["last_error"]
+                break
         self._save()
 
     def pending(self) -> list:

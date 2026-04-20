@@ -291,7 +291,7 @@ class EntryForm(tk.Frame):
         bf.pack(fill=tk.X, padx=16, pady=8)
         mac_btn(bf, "Clear", self._clear).pack(side=tk.LEFT)
         mac_btn(bf, "History", self._show_log).pack(side=tk.LEFT, padx=(8, 0))
-        mac_btn(bf, "Updates", self._check_for_update_manual, small=True).pack(side=tk.LEFT, padx=(8, 0))
+        mac_btn(bf, "Updates", self._check_for_update_manual).pack(side=tk.LEFT, padx=(8, 0))
         self._generate_btn = mac_btn(
             bf, "  Generate Draft  (Cmd+Enter)  ",
             self._generate, primary=True)

@@ -516,16 +516,19 @@ class ReviewScreen(tk.Frame):
         wt_id = self._get_wt_id()
         resource_id = self.app.cache.get_resource_id()
         priority_id = self.app.cache.get_priority_medium_id()
+        work_mode = self._work_mode_var.get()
+        try:
+            travel_hours = float(self._travel_hrs_var.get()) if self._travel_var.get() else 0.0
+        except ValueError:
+            travel_hours = 0.0
 
         def worker():
+            import requests as _req
             results = []
             errors_list = []
+            queued_list = []
             for co in companies_to_submit:
                 try:
-                    try:
-                        travel_hours = float(self._travel_hrs_var.get()) if self._travel_var.get() else 0.0
-                    except ValueError:
-                        travel_hours = 0.0
                     result = self.app.autotask.create_ticket_and_time_entry(
                         company_id=co.id,
                         title=title,
@@ -538,19 +541,46 @@ class ReviewScreen(tk.Frame):
                         queue_id=self.app.config.queue_id,
                         travel_hours=travel_hours,
                     )
-                    # Save to recent companies
                     self.app.cache.add_recent_company(co.id, co.name)
                     results.append((co.name, result))
+                except (_req.exceptions.ConnectionError, _req.exceptions.Timeout):
+                    self.app.queue.add({
+                        "company_id": co.id,
+                        "company_name": co.name,
+                        "client": fd["client"],
+                        "title": title,
+                        "description": summary,
+                        "start_dt": fd["start_dt"].isoformat(),
+                        "end_dt": fd["end_dt"].isoformat(),
+                        "duration_hours": fd["duration_hours"],
+                        "billing_code_id": wt_id,
+                        "resource_id": resource_id,
+                        "priority_id": priority_id,
+                        "queue_id": self.app.config.queue_id,
+                        "travel_hours": travel_hours,
+                        "work_mode": work_mode,
+                    })
+                    queued_list.append(co.name)
                 except Exception as exc:
                     errors_list.append((co.name, str(exc)))
 
-            self.after(0, lambda: self._on_submit_done(results, errors_list))
+            self.after(0, lambda: self._on_submit_done(results, errors_list, queued_list))
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _on_submit_done(self, results, errors_list):
+    def _on_submit_done(self, results, errors_list, queued_list=None):
         self._submit_btn.configure_btn(state="normal")
         self._status_var.set("")
+        queued_list = queued_list or []
+
+        if queued_list:
+            n = len(queued_list)
+            messagebox.showinfo(
+                "Saved Offline",
+                f"No connection to Autotask.\n\n"
+                f"{n} entr{'y' if n == 1 else 'ies'} saved locally and will submit automatically next time the app is online."
+            )
+
         if errors_list and not results:
             msgs = "\n".join(f"{n}: {e[:80]}" for n, e in errors_list)
             messagebox.showerror("All submissions failed", msgs)
@@ -558,6 +588,9 @@ class ReviewScreen(tk.Frame):
         if errors_list:
             msgs = "\n".join(f"\u26a0 {n}: {e[:80]}" for n, e in errors_list)
             messagebox.showwarning("Some submissions failed", msgs)
+
+        if not results:
+            return
 
         # Log to history + update last client
         fd = self.app.form_data

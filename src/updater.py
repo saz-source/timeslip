@@ -40,7 +40,10 @@ def check_for_update(
             if not tag:
                 return
             if _parse_version(tag) > _parse_version(current_version):
-                url = data.get("html_url", RELEASES_PAGE)
+                assets = data.get("assets", [])
+                dmg = next((a["browser_download_url"] for a in assets
+                            if a.get("name", "").endswith(".dmg")), None)
+                url = dmg or data.get("html_url", RELEASES_PAGE)
                 on_update_available(tag.lstrip("v"), url)
         except Exception as exc:
             logger.debug("Update check failed (non-critical): %s", exc)

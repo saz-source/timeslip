@@ -12,11 +12,12 @@ from src.autotask_client import AutotaskClient
 from src.anthropic_client import AnthropicClient
 from src.cache import Cache
 from src.config import Config
+from src.queue import OfflineQueue
 from src.ui.styles import BG, ACCENT, ACCENT_LT, CARD, FG, FG2, BORDER, DIVIDER, SUCCESS, FONT_BODY, FONT_BOLD, FONT_HDR, FONT_SM
 
 logger = logging.getLogger(__name__)
 
-VERSION = "1.33"
+VERSION = "1.35"
 _company = os.environ.get("COMPANY_NAME", "")
 APP_TITLE = f"TimeSlip  v{VERSION}"
 HEADER_TITLE = f"{_company} \u2014 Autotask Time Entry" if _company else "Autotask Time Entry"
@@ -32,6 +33,7 @@ class App:
         self.autotask = autotask
         self.anthropic = anthropic
         self.cache = cache
+        self.queue = OfflineQueue()
 
         self.root = tk.Tk()
         self.root.title(APP_TITLE)
@@ -117,6 +119,8 @@ class App:
     def _bootstrap(self):
         if self.cache.is_populated:
             self.show_entry_form()
+            self._check_for_update()
+            self._flush_queue()
             return
         self._loading_screen = LoadingScreen(self.root, app=self)
         self._switch_frame(self._loading_screen)
@@ -147,6 +151,7 @@ class App:
         else:
             self.show_entry_form()
         self._check_for_update()
+        self._flush_queue()
 
     def _check_for_update(self):
         from src.updater import check_for_update
@@ -157,6 +162,60 @@ class App:
     def _show_update_banner(self, latest: str, url: str):
         if self._current_frame and hasattr(self._current_frame, "show_update_banner"):
             self._current_frame.show_update_banner(latest, url)
+
+    def _flush_queue(self):
+        if self.queue.count() == 0:
+            return
+
+        def worker():
+            from datetime import datetime as _dt
+            flushed = []
+            for item in self.queue.pending():
+                try:
+                    result = self.autotask.create_ticket_and_time_entry(
+                        company_id=item["company_id"],
+                        title=item["title"],
+                        description=item["description"],
+                        start_dt=_dt.fromisoformat(item["start_dt"]),
+                        end_dt=_dt.fromisoformat(item["end_dt"]),
+                        billing_code_id=item["billing_code_id"],
+                        resource_id=item["resource_id"],
+                        priority_id=item["priority_id"],
+                        queue_id=item["queue_id"],
+                        travel_hours=item.get("travel_hours", 0.0),
+                    )
+                    self.queue.remove(item["id"])
+                    self.cache.add_history_entry(
+                        company_id=item["company_id"],
+                        company_name=item["company_name"],
+                        ticket_id=result.ticket_id,
+                        ticket_number=result.ticket_number,
+                        time_entry_id=result.time_entry_id,
+                        title=item["title"],
+                        work_date=item["start_dt"][:10],
+                        start_time=_dt.fromisoformat(item["start_dt"]).strftime("%I:%M %p").lstrip("0"),
+                        duration_hours=item.get("duration_hours", 0.0),
+                        work_mode=item.get("work_mode", "unknown"),
+                    )
+                    flushed.append(item)
+                except Exception:
+                    break  # still offline or API error — try again next launch
+            if flushed:
+                self.root.after(0, lambda: self._on_queue_flushed(flushed))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_queue_flushed(self, flushed):
+        n = len(flushed)
+        names = ", ".join(i["company_name"] for i in flushed[:3])
+        if n > 3:
+            names += f" +{n - 3} more"
+        messagebox.showinfo(
+            "Offline Entries Submitted",
+            f"{n} queued entr{'y' if n == 1 else 'ies'} submitted:\n{names}"
+        )
+        if self._current_frame and hasattr(self._current_frame, "refresh_queue_banner"):
+            self._current_frame.refresh_queue_banner()
 
     def _bootstrap_error(self, msg: str):
         if self._current_frame:

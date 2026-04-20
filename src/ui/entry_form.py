@@ -84,8 +84,26 @@ class EntryForm(tk.Frame):
         self.app = app
         self._selected_date = date.today()
         self._update_banner = None
+        self._queue_banner = None
         self._build()
+        self._check_queue_banner()
         self._bind_shortcuts()
+
+    def _check_queue_banner(self):
+        n = self.app.queue.count()
+        if n > 0 and not self._queue_banner:
+            bar = tk.Frame(self, bg="#fde8d8", pady=4)
+            bar.pack(fill=tk.X, before=self.winfo_children()[1])
+            tk.Label(bar,
+                     text=f"  \u23f3  {n} offline entr{'y' if n == 1 else 'ies'} pending \u2014 will submit when connected.",
+                     font=FONT_SM, bg="#fde8d8", fg="#7a3a00").pack(side=tk.LEFT)
+            self._queue_banner = bar
+
+    def refresh_queue_banner(self):
+        if self._queue_banner:
+            self._queue_banner.destroy()
+            self._queue_banner = None
+        self._check_queue_banner()
 
     def show_update_banner(self, latest: str, url: str):
         if self._update_banner:

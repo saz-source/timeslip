@@ -38,6 +38,14 @@ class CreationResult:
     time_entry_id: int
 
 
+class PartialCreationError(Exception):
+    """Ticket was created but time entry failed — stores ticket_id to avoid duplicate on retry."""
+    def __init__(self, ticket_id: int, ticket_number: str, cause: Exception):
+        super().__init__(str(cause))
+        self.ticket_id = ticket_id
+        self.ticket_number = ticket_number
+
+
 class AutotaskClient:
 
     def __init__(self, config: Config) -> None:
@@ -45,6 +53,7 @@ class AutotaskClient:
         self._base = config.autotask_base_url.rstrip("/") + "/v1.0"
         self._session = self._build_session()
         self._all_companies: list | None = None
+        self._last_error: str | None = None
 
     # ------------------------------------------------------------------
     # Bootstrap
@@ -191,7 +200,6 @@ class AutotaskClient:
         queue_id: int,
         travel_hours: float = 0.0,
     ) -> CreationResult:
-        from datetime import timedelta
         date_str = start_dt.strftime("%Y-%m-%d")
         role_id = int(os.environ.get("AUTOTASK_ROLE_ID", 29682834))
 
@@ -216,11 +224,47 @@ class AutotaskClient:
             ticket_detail.get("item", {}).get("ticketNumber", ticket_id)
         )
 
-        # 2. Optional travel time entry (before main entry)
+        try:
+            time_entry_id = self.create_time_entries(
+                ticket_id=ticket_id,
+                ticket_number=ticket_number,
+                title=title,
+                description=description,
+                start_dt=start_dt,
+                end_dt=end_dt,
+                billing_code_id=billing_code_id,
+                resource_id=resource_id,
+                travel_hours=travel_hours,
+            )
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as exc:
+            raise PartialCreationError(ticket_id, ticket_number, exc)
+
+        return CreationResult(
+            ticket_id=ticket_id,
+            ticket_number=ticket_number,
+            time_entry_id=time_entry_id,
+        )
+
+    def create_time_entries(
+        self,
+        ticket_id: int,
+        ticket_number: str,
+        title: str,
+        description: str,
+        start_dt: datetime,
+        end_dt: datetime,
+        billing_code_id: int,
+        resource_id: int,
+        travel_hours: float = 0.0,
+    ) -> int:
+        """Create time entries for an existing ticket. Used for normal flow and partial-failure recovery."""
+        from datetime import timedelta as _td
+        role_id = int(os.environ.get("AUTOTASK_ROLE_ID", 29682834))
+
         if travel_hours > 0:
             travel_end = start_dt
-            travel_start = start_dt - timedelta(hours=travel_hours)
-            travel_payload: dict[str, Any] = {
+            travel_start = start_dt - _td(hours=travel_hours)
+            self._post("TimeEntries", {
                 "resourceID": resource_id,
                 "ticketID": ticket_id,
                 "roleID": role_id,
@@ -228,11 +272,9 @@ class AutotaskClient:
                 "endDateTime": self._fmt_dt(travel_end),
                 "summaryNotes": f"Travel time — {title}",
                 "billingCodeID": self.TRAVEL_TIME_BILLING_CODE_ID,
-            }
-            self._post("TimeEntries", travel_payload)
+            })
 
-        # 3. Main time entry
-        time_entry_payload: dict[str, Any] = {
+        te_resp = self._post("TimeEntries", {
             "resourceID": resource_id,
             "ticketID": ticket_id,
             "roleID": role_id,
@@ -240,15 +282,8 @@ class AutotaskClient:
             "endDateTime": self._fmt_dt(end_dt),
             "summaryNotes": description,
             "billingCodeID": billing_code_id,
-        }
-        te_resp = self._post("TimeEntries", time_entry_payload)
-        time_entry_id = int(te_resp["itemId"])
-
-        return CreationResult(
-            ticket_id=ticket_id,
-            ticket_number=ticket_number,
-            time_entry_id=time_entry_id,
-        )
+        })
+        return int(te_resp["itemId"])
 
     # ------------------------------------------------------------------
     # HTTP helpers
@@ -301,12 +336,28 @@ class AutotaskClient:
         self._raise_for_status(r, url)
         return r.json()
 
-    @staticmethod
-    def _raise_for_status(r: requests.Response, url: str) -> None:
+    def _raise_for_status(self, r: requests.Response, url: str) -> None:
         if not r.ok:
-            raise RuntimeError(
-                f"Autotask API error {r.status_code} for {url}: {r.text[:400]}"
-            )
+            entity = url.split("/v1.0/")[-1].split("?")[0].split("/")[0] if "/v1.0/" in url else "resource"
+            raw = r.text[:300]
+            try:
+                errs = r.json().get("errors", [])
+                if errs:
+                    raw = "; ".join(str(e) for e in errs[:3])
+            except Exception:
+                pass
+            if r.status_code == 401:
+                msg = "Authentication failed — check AUTOTASK_USERNAME and AUTOTASK_SECRET in .env"
+            elif r.status_code == 403:
+                msg = "Access denied — check AUTOTASK_INTEGRATION_CODE in .env"
+            elif r.status_code == 400:
+                msg = f"Invalid {entity} data: {raw}"
+            elif r.status_code == 404:
+                msg = f"{entity} not found (404) — check IDs in .env"
+            else:
+                msg = f"Autotask {r.status_code} on {entity}: {raw}"
+            self._last_error = msg
+            raise RuntimeError(msg)
 
     @staticmethod
     def _fmt_dt(dt: datetime) -> str:

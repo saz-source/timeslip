@@ -79,15 +79,33 @@ def fmt_time(h, m):
 
 
 class EntryForm(tk.Frame):
-    def __init__(self, parent, app: "App"):
+    def __init__(self, parent, app: "App", prefill: dict | None = None):
         super().__init__(parent, bg=BG)
         self.app = app
         self._selected_date = date.today()
         self._update_banner = None
         self._queue_banner = None
         self._build()
+        if prefill:
+            self._apply_prefill(prefill)
         self._check_queue_banner()
         self._bind_shortcuts()
+
+    def _apply_prefill(self, p: dict):
+        if p.get("client"):
+            self._client_var.set(p["client"])
+        if p.get("work_date"):
+            try:
+                from datetime import date as _d
+                self._on_date_selected(_d.fromisoformat(p["work_date"]))
+            except Exception:
+                pass
+        if p.get("start_time"):
+            self._start_var.set(p["start_time"])
+        if p.get("duration_hours"):
+            self._duration_var.set(str(p["duration_hours"]))
+        if p.get("work_mode") in ("onsite", "offsite", "auto"):
+            self._work_mode_var.set(p["work_mode"])
 
     def _check_queue_banner(self):
         n = self.app.queue.count()
@@ -273,6 +291,7 @@ class EntryForm(tk.Frame):
         bf.pack(fill=tk.X, padx=16, pady=8)
         mac_btn(bf, "Clear", self._clear).pack(side=tk.LEFT)
         mac_btn(bf, "History", self._show_log).pack(side=tk.LEFT, padx=(8, 0))
+        mac_btn(bf, "Updates", self._check_for_update_manual, small=True).pack(side=tk.LEFT, padx=(8, 0))
         self._generate_btn = mac_btn(
             bf, "  Generate Draft  (Cmd+Enter)  ",
             self._generate, primary=True)
@@ -463,9 +482,27 @@ class EntryForm(tk.Frame):
         from src.ui.log_viewer import LogViewer
         LogViewer(self.app.root, app=self.app)
 
+    def _check_for_update_manual(self):
+        from src.updater import check_for_update
+        from src.ui.app import VERSION
+        self._status_var.set("Checking for updates\u2026")
+        def on_update(latest, url):
+            self.app._latest_github_version = latest
+            self.after(0, lambda: (self._status_var.set(""), self.show_update_banner(latest, url)))
+        def on_up_to_date(latest):
+            self.app._latest_github_version = latest
+            self.after(0, lambda: self._status_var.set(f"\u2713  You\u2019re up to date  (v{latest})"))
+            self.after(3000, lambda: self._status_var.set(""))
+        check_for_update(VERSION, on_update, on_up_to_date)
+
+    def _show_diagnostics(self):
+        from src.ui.diagnostics import DiagnosticsPanel
+        DiagnosticsPanel(self.app.root, app=self.app)
+
     def _bind_shortcuts(self):
         self.app.root.bind("<Command-Return>", lambda _: self._generate())
         self.app.root.bind("<Control-Return>", lambda _: self._generate())
+        self.app.root.bind("<Command-Shift-D>", lambda _: self._show_diagnostics())
         self.bind("<Destroy>", self._unbind_shortcuts)
         # Tab navigation between fields
         try:
@@ -480,5 +517,6 @@ class EntryForm(tk.Frame):
         try:
             self.app.root.unbind("<Command-Return>")
             self.app.root.unbind("<Control-Return>")
+            self.app.root.unbind("<Command-Shift-D>")
         except Exception:
             pass

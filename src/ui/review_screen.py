@@ -9,7 +9,7 @@ import tkinter as tk
 from tkinter import ttk
 from typing import TYPE_CHECKING, Optional
 
-from src.autotask_client import Company, WorkType
+from src.autotask_client import Company, WorkType, PartialCreationError
 from src.ui.styles import (
     BG, CARD, ACCENT, ACCENT_LT, FG, FG2, FG3, BORDER,
     DIVIDER, SUCCESS, WARN,
@@ -543,6 +543,26 @@ class ReviewScreen(tk.Frame):
                     )
                     self.app.cache.add_recent_company(co.id, co.name)
                     results.append((co.name, result))
+                except PartialCreationError as exc:
+                    self.app.queue.add({
+                        "company_id": co.id,
+                        "company_name": co.name,
+                        "client": fd["client"],
+                        "title": title,
+                        "description": summary,
+                        "start_dt": fd["start_dt"].isoformat(),
+                        "end_dt": fd["end_dt"].isoformat(),
+                        "duration_hours": fd["duration_hours"],
+                        "billing_code_id": wt_id,
+                        "resource_id": resource_id,
+                        "priority_id": priority_id,
+                        "queue_id": self.app.config.queue_id,
+                        "travel_hours": travel_hours,
+                        "work_mode": work_mode,
+                        "ticket_id": exc.ticket_id,
+                        "ticket_number": exc.ticket_number,
+                    })
+                    queued_list.append(co.name)
                 except (_req.exceptions.ConnectionError, _req.exceptions.Timeout):
                     self.app.queue.add({
                         "company_id": co.id,

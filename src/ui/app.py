@@ -17,7 +17,7 @@ from src.ui.styles import BG, ACCENT, ACCENT_LT, CARD, FG, FG2, BORDER, DIVIDER,
 
 logger = logging.getLogger(__name__)
 
-VERSION = "1.36"
+VERSION = "1.37"
 _company = os.environ.get("COMPANY_NAME", "")
 APP_TITLE = f"TimeSlip  v{VERSION}"
 HEADER_TITLE = f"{_company} \u2014 Autotask Time Entry" if _company else "Autotask Time Entry"
@@ -45,6 +45,7 @@ class App:
         self._current_frame: Optional[tk.Frame] = None
         self.form_data: dict = {}
         self.ai_result = None
+        self._latest_github_version: str | None = None
 
     def run(self):
         # Center window on screen
@@ -76,9 +77,9 @@ class App:
         self.root.after(0, self._bootstrap)
         self.root.mainloop()
 
-    def show_entry_form(self):
+    def show_entry_form(self, prefill: dict | None = None):
         from src.ui.entry_form import EntryForm
-        self._switch_frame(EntryForm(self.root, app=self))
+        self._switch_frame(EntryForm(self.root, app=self, prefill=prefill))
 
     def show_review(self, form_data: dict, ai_result):
         from src.ui.review_screen import ReviewScreen
@@ -156,8 +157,11 @@ class App:
     def _check_for_update(self):
         from src.updater import check_for_update
         def on_update(latest, url):
+            self._latest_github_version = latest
             self.root.after(0, lambda: self._show_update_banner(latest, url))
-        check_for_update(VERSION, on_update)
+        def on_up_to_date(latest):
+            self._latest_github_version = latest
+        check_for_update(VERSION, on_update, on_up_to_date)
 
     def _show_update_banner(self, latest: str, url: str):
         if self._current_frame and hasattr(self._current_frame, "show_update_banner"):
@@ -172,34 +176,52 @@ class App:
             flushed = []
             for item in self.queue.pending():
                 try:
-                    result = self.autotask.create_ticket_and_time_entry(
-                        company_id=item["company_id"],
-                        title=item["title"],
-                        description=item["description"],
-                        start_dt=_dt.fromisoformat(item["start_dt"]),
-                        end_dt=_dt.fromisoformat(item["end_dt"]),
-                        billing_code_id=item["billing_code_id"],
-                        resource_id=item["resource_id"],
-                        priority_id=item["priority_id"],
-                        queue_id=item["queue_id"],
-                        travel_hours=item.get("travel_hours", 0.0),
-                    )
+                    start = _dt.fromisoformat(item["start_dt"])
+                    end   = _dt.fromisoformat(item["end_dt"])
+                    if item.get("ticket_id"):
+                        # Partial failure recovery — ticket exists, only create time entries
+                        te_id = self.autotask.create_time_entries(
+                            ticket_id=item["ticket_id"],
+                            ticket_number=item.get("ticket_number", ""),
+                            title=item["title"],
+                            description=item["description"],
+                            start_dt=start,
+                            end_dt=end,
+                            billing_code_id=item["billing_code_id"],
+                            resource_id=item["resource_id"],
+                            travel_hours=item.get("travel_hours", 0.0),
+                        )
+                        t_id, t_num, te_id = item["ticket_id"], item.get("ticket_number", ""), te_id
+                    else:
+                        result = self.autotask.create_ticket_and_time_entry(
+                            company_id=item["company_id"],
+                            title=item["title"],
+                            description=item["description"],
+                            start_dt=start,
+                            end_dt=end,
+                            billing_code_id=item["billing_code_id"],
+                            resource_id=item["resource_id"],
+                            priority_id=item["priority_id"],
+                            queue_id=item["queue_id"],
+                            travel_hours=item.get("travel_hours", 0.0),
+                        )
+                        t_id, t_num, te_id = result.ticket_id, result.ticket_number, result.time_entry_id
                     self.queue.remove(item["id"])
                     self.cache.add_history_entry(
                         company_id=item["company_id"],
                         company_name=item["company_name"],
-                        ticket_id=result.ticket_id,
-                        ticket_number=result.ticket_number,
-                        time_entry_id=result.time_entry_id,
+                        ticket_id=t_id,
+                        ticket_number=t_num,
+                        time_entry_id=te_id,
                         title=item["title"],
                         work_date=item["start_dt"][:10],
-                        start_time=_dt.fromisoformat(item["start_dt"]).strftime("%I:%M %p").lstrip("0"),
+                        start_time=start.strftime("%I:%M %p").lstrip("0"),
                         duration_hours=item.get("duration_hours", 0.0),
                         work_mode=item.get("work_mode", "unknown"),
                     )
                     flushed.append(item)
                 except Exception:
-                    break  # still offline or API error — try again next launch
+                    break  # still offline or unrecoverable — try again next launch
             if flushed:
                 self.root.after(0, lambda: self._on_queue_flushed(flushed))
 

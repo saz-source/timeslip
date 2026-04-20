@@ -21,11 +21,12 @@ def _parse_version(tag: str) -> tuple:
 def check_for_update(
     current_version: str,
     on_update_available: Callable[[str, str], None],
+    on_up_to_date: Optional[Callable[[str], None]] = None,
 ) -> None:
     """
     Spawn a background thread to check for updates.
-    Calls on_update_available(latest_version, download_url) if a newer
-    release exists. Silently does nothing on any error or if up to date.
+    Calls on_update_available(latest_version, download_url) if newer release exists.
+    Calls on_up_to_date(latest_version) if already current.
     """
     def worker():
         try:
@@ -45,6 +46,8 @@ def check_for_update(
                             if a.get("name", "").endswith(".dmg")), None)
                 url = dmg or data.get("html_url", RELEASES_PAGE)
                 on_update_available(tag.lstrip("v"), url)
+            elif on_up_to_date:
+                on_up_to_date(tag.lstrip("v"))
         except Exception as exc:
             logger.debug("Update check failed (non-critical): %s", exc)
 

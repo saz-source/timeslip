@@ -17,7 +17,7 @@ from src.ui.styles import BG, ACCENT, ACCENT_LT, CARD, FG, FG2, BORDER, DIVIDER,
 
 logger = logging.getLogger(__name__)
 
-VERSION = "1.38"
+VERSION = "1.39"
 _company = os.environ.get("COMPANY_NAME", "")
 APP_TITLE = f"TimeSlip  v{VERSION}"
 HEADER_TITLE = f"{_company} \u2014 Autotask Time Entry" if _company else "Autotask Time Entry"

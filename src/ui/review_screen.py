@@ -389,7 +389,6 @@ class ReviewScreen(tk.Frame):
         if len(companies) == 1:
             self._company = companies[0]
             self._company_var.set(f"\u2713  {companies[0].name}")
-            self._check_duplicate(companies[0])
         else:
             self._pick_from_list(companies)
 
@@ -397,19 +396,18 @@ class ReviewScreen(tk.Frame):
         self._company_var.set("\u26a0 Lookup failed")
         messagebox.showwarning("Company Lookup Error", f"Could not search:\n{msg}")
 
-    def _check_duplicate(self, company):
+    def _check_duplicate_dialog(self, company) -> bool:
+        """Returns True if submission should proceed (no dup, or user clicked Proceed Anyway)."""
         fd = self.app.form_data
         work_date = fd["start_dt"].strftime("%Y-%m-%d")
         existing = self.app.cache.check_duplicate(company.id, work_date)
-        if existing:
-            from tkinter import messagebox
-            messagebox.showwarning(
-                "Possible Duplicate",
-                f"You already submitted a ticket for {company.name} on {work_date}:\n\n"
-                f"  Ticket: {existing.get('ticket_number')}\n"
-                f"  Title: {existing.get('title', '')}\n\n"
-                "Continue anyway if this is a separate visit."
-            )
+        if not existing:
+            return True
+        from src.ui.duplicate_dialog import DuplicateWarningDialog
+        dlg = DuplicateWarningDialog(self.app.root, existing=existing,
+                                     company_name=company.name)
+        self.app.root.wait_window(dlg)
+        return dlg.proceed
 
     def _pick_company(self):
         q = simpledialog.askstring("Search Company",
@@ -496,6 +494,11 @@ class ReviewScreen(tk.Frame):
             for entry in self._checked_companies.values():
                 if entry["var"].get():
                     companies_to_submit.append(entry["company"])
+
+        # Check for duplicates before showing confirmation
+        for co in companies_to_submit:
+            if not self._check_duplicate_dialog(co):
+                return
 
         n = len(companies_to_submit)
         msg = (f"Create Ticket + Time Entry for {n} company"

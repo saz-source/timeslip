@@ -2,6 +2,7 @@
 Autotask REST API client.
 Handles all API calls with retry/backoff. No secrets are logged.
 """
+from __future__ import annotations
 import os
 import time
 import logging

@@ -1,6 +1,7 @@
 """
 Screen 1 - Entry Form. Smart time parsing, custom calendar + dropdown pickers.
 """
+from __future__ import annotations
 import threading
 from datetime import date, datetime, timedelta
 from tkinter import messagebox

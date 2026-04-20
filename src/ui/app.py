@@ -1,6 +1,7 @@
 """
 Main application window. Manages screen transitions and bootstrap loading screen.
 """
+from __future__ import annotations
 import logging
 import os
 import threading

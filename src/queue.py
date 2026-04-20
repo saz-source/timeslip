@@ -2,6 +2,7 @@
 Offline submission queue. Persists un-submitted entries to disk when
 Autotask is unreachable, so they can be flushed on the next launch.
 """
+from __future__ import annotations
 import json
 import logging
 import uuid

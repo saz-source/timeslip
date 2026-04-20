@@ -27,7 +27,7 @@ def needs_setup() -> bool:
     if not ENV_PATH.exists():
         return True
     env = ENV_PATH.read_text()
-    return "AUTOTASK_RESOURCE_EMAIL" not in env
+    return not all(k in env for k in LIC_REQUIRED_KEYS)
 
 
 class FirstRunSetup(tk.Tk):

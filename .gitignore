@@ -1,0 +1,12 @@
+.env
+*.lic
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+dist/
+build/
+~/.autotask_time_entry/
+.DS_Store
+timeslip_shared_config_TEMPLATE.json
+.claude/

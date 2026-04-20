@@ -4,6 +4,7 @@ Screen 3 - Confirmation. Polished success screen.
 import tkinter as tk
 from tkinter import ttk
 from typing import TYPE_CHECKING
+from datetime import datetime as _dt
 
 from src.autotask_client import CreationResult
 from src.ui.styles import (
@@ -14,6 +15,12 @@ from src.ui.styles import (
 
 if TYPE_CHECKING:
     from src.ui.app import App
+
+
+def _fmt_time_short(dt: _dt) -> str:
+    if dt.minute == 0:
+        return dt.strftime('%I%p').lstrip('0')
+    return dt.strftime('%I:%M%p').lstrip('0')
 
 
 class ConfirmationScreen(tk.Frame):
@@ -40,7 +47,7 @@ class ConfirmationScreen(tk.Frame):
         # IDs card
         ids = tk.Frame(self, bg=ACCENT_LT,
                        highlightbackground=ACCENT, highlightthickness=1)
-        ids.pack(fill=tk.X, padx=40, pady=(0, 8))
+        ids.pack(fill=tk.X, padx=40, pady=(0, 4))
 
         multi = getattr(self.app, "_multi_results", None)
         if multi and len(multi) > 1:
@@ -68,11 +75,11 @@ class ConfirmationScreen(tk.Frame):
 
         cf = tk.Frame(self, bg=CARD,
                       highlightbackground=BORDER, highlightthickness=1)
-        cf.pack(fill=tk.BOTH, expand=True, padx=40)
+        cf.pack(fill=tk.X, padx=40)
 
         self._textbox = tk.Text(
-            cf, wrap=tk.WORD, font=FONT_MONO,
-            relief=tk.FLAT, padx=12, pady=10,
+            cf, height=8, wrap=tk.WORD, font=FONT_MONO,
+            relief=tk.FLAT, padx=12, pady=8,
             bg="#f7f9fc", fg=FG,
             cursor="hand2",
         )
@@ -86,16 +93,14 @@ class ConfirmationScreen(tk.Frame):
         self._copy_hint.pack(pady=(4, 0))
 
         # Buttons
-        tk.Frame(self, bg=DIVIDER, height=1).pack(fill=tk.X, pady=(10, 0))
+        tk.Frame(self, bg=DIVIDER, height=1).pack(fill=tk.X, pady=(8, 0))
         bf = tk.Frame(self, bg=BG)
-        bf.pack(fill=tk.X, padx=16, pady=10)
+        bf.pack(fill=tk.X, padx=16, pady=8)
         mac_btn(bf, "Quit", self.app.root.destroy).pack(side=tk.RIGHT, padx=(8, 0))
         mac_btn(bf, "  Create Another Entry  ",
                 self.app.show_entry_form, primary=True).pack(side=tk.RIGHT, padx=(8, 0))
         mac_btn(bf, "  Same Entry, New Client  ",
                 self._repeat_new_client).pack(side=tk.RIGHT, padx=(8, 0))
-        mac_btn(bf, "Open in Autotask",
-                self._open_in_autotask).pack(side=tk.LEFT)
 
     def _id_row(self, parent, label, value):
         row = tk.Frame(parent, bg=ACCENT_LT)
@@ -107,18 +112,6 @@ class ConfirmationScreen(tk.Frame):
         tk.Label(row, text=value,
                  font=(FONT_MONO[0], 14, "bold"),
                  bg=ACCENT_LT, fg=ACCENT).pack(side=tk.LEFT)
-
-    def _open_in_autotask(self):
-        import webbrowser
-        import os
-        # Construct Autotask ticket URL from base URL
-        base = os.environ.get("AUTOTASK_BASE_URL", "")
-        # Convert API URL to UI URL: webservices5 -> ww5
-        ui_base = base.replace("webservices", "ww").replace("/ATServicesRest/", "")
-        if not ui_base:
-            ui_base = "https://ww5.autotask.net"
-        url = f"{ui_base}/AutotaskOnyx/HtmlEditor.aspx?PageId=1&TicketID={self.result.ticket_id}"
-        webbrowser.open(url)
 
     def _repeat_new_client(self):
         """Re-open the review screen with same draft but fresh company lookup."""
@@ -136,8 +129,7 @@ class ConfirmationScreen(tk.Frame):
             f"Ticket:      {self.result.ticket_number} (ID {self.result.ticket_id})",
             f"Time Entry:  {self.result.time_entry_id}",
             f"Client:      {fd['client']}",
-            f"Time:        {s.strftime('%I:%M %p').lstrip('0')} \u2013 "
-            f"{e.strftime('%I:%M %p').lstrip('0')} ({fd['duration_hours']:.2f} hrs)",
+            f"Time:        {_fmt_time_short(s)} \u2013 {_fmt_time_short(e)} ({fd['duration_hours']:.2f} hrs)",
             f"Title:       {ai.title}",
             "",
             "\u26a0 Remember to approve/post the time entry in the Autotask UI.",

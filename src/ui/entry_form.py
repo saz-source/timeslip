@@ -288,6 +288,9 @@ class EntryForm(tk.Frame):
         self._notes_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         sb.pack(side=tk.RIGHT, fill=tk.Y)
 
+        # Initialise date hint to show current selection from the start
+        self._on_date_selected(self._selected_date)
+
         # Status + buttons
         self._status_var = tk.StringVar()
         tk.Label(self, textvariable=self._status_var,

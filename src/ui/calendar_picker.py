@@ -23,6 +23,7 @@ def _month_calendar_sun_first(year, month):
 class CalendarPicker(tk.Toplevel):
     def __init__(self, parent, initial_date: date, callback, anchor_widget=None):
         super().__init__(parent)
+        self.withdraw()  # hide until positioned to avoid bottom-left flash
         self.overrideredirect(False)
         self.configure(bg=BORDER)
         self.resizable(False, False)
@@ -54,6 +55,7 @@ class CalendarPicker(tk.Toplevel):
                  if anchor_widget else sh - h - 4)
 
         self.geometry(f"+{x}+{y}")
+        self.deiconify()
         self.lift()
         self.focus_force()
         self.bind("<FocusOut>", self._on_focus_out)

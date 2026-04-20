@@ -21,6 +21,13 @@ if TYPE_CHECKING:
     from src.ui.app import App
 
 
+def _fmt_time_short(dt: datetime) -> str:
+    """Format as '9AM' or '2:30PM' — no colon for whole hours."""
+    if dt.minute == 0:
+        return dt.strftime('%I%p').lstrip('0')
+    return dt.strftime('%I:%M%p').lstrip('0')
+
+
 class ReviewScreen(tk.Frame):
     def __init__(self, parent, app: "App"):
         super().__init__(parent, bg=BG)
@@ -195,7 +202,7 @@ class ReviewScreen(tk.Frame):
             highlightcolor=ACCENT,
             padx=8, pady=6, bg=CARD, fg=FG,
             insertbackground=ACCENT,
-            selectbackground=ACCENT_LT)
+            selectbackground=ACCENT_LT, selectforeground=FG)
         sb = ttk.Scrollbar(sf, orient=tk.VERTICAL,
                            command=self._summary_text.yview)
         self._summary_text.configure(yscrollcommand=sb.set)
@@ -320,7 +327,7 @@ class ReviewScreen(tk.Frame):
             parent, wrap=tk.WORD, font=FONT_BODY,
             relief=tk.FLAT, bg="#f7f9fc", fg=FG2,
             padx=12, pady=8, state=tk.DISABLED,
-            selectbackground=ACCENT_LT)
+            selectbackground=ACCENT_LT, selectforeground=FG)
         self._raw_notes_text.pack(fill=tk.BOTH, expand=True)
 
     def _populate(self):
@@ -330,12 +337,12 @@ class ReviewScreen(tk.Frame):
         end = fd["end_dt"]
         self._datetime_var.set(
             f"{start.strftime('%a %b %d, %Y')}   "
-            f"{start.strftime('%I:%M %p').lstrip('0')} \u2013 "
-            f"{end.strftime('%I:%M %p').lstrip('0')}   "
+            f"{_fmt_time_short(start)} \u2013 "
+            f"{_fmt_time_short(end)}   "
             f"({fd['duration_hours']:.2f} hrs)"
         )
         self._title_var.set(ai.title)
-        mode = ai.work_mode if ai.work_mode in ("onsite", "offsite") else "unknown"
+        mode = ai.work_mode if ai.work_mode in ("onsite", "offsite") else "onsite"
         self._work_mode_var.set(mode)
         self._summary_text.delete("1.0", tk.END)
         self._summary_text.insert("1.0", ai.summary)
@@ -472,7 +479,7 @@ class ReviewScreen(tk.Frame):
         self._summary_text.delete("1.0", tk.END)
         self._summary_text.insert("1.0", ai.summary)
         if self.app.form_data.get("work_mode_override", "auto") == "auto":
-            mode = ai.work_mode if ai.work_mode in ("onsite", "offsite") else "unknown"
+            mode = ai.work_mode if ai.work_mode in ("onsite", "offsite") else "onsite"
             self._work_mode_var.set(mode)
             self._set_work_type_from_mode(mode)
 
@@ -667,6 +674,7 @@ class ReviewScreen(tk.Frame):
 class CompanyPickerDialog(tk.Toplevel):
     def __init__(self, parent, companies):
         super().__init__(parent)
+        self.withdraw()
         self.title("Select Company")
         self.resizable(False, False)
         self.grab_set()
@@ -700,6 +708,13 @@ class CompanyPickerDialog(tk.Toplevel):
         mac_btn(bf, "Cancel", self.destroy).pack(side=tk.RIGHT, padx=(8, 0))
         mac_btn(bf, "Select", self._select, primary=True).pack(side=tk.RIGHT)
         self._lb.bind("<Double-Button-1>", lambda _: self._select())
+
+        self.update_idletasks()
+        pw, ph = parent.winfo_width(), parent.winfo_height()
+        px, py = parent.winfo_rootx(), parent.winfo_rooty()
+        w, h = self.winfo_reqwidth(), self.winfo_reqheight()
+        self.geometry(f"+{px + (pw - w) // 2}+{py + (ph - h) // 2}")
+        self.deiconify()
 
     def _select(self):
         sel = self._lb.curselection()

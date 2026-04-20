@@ -17,7 +17,7 @@ from src.ui.styles import BG, ACCENT, ACCENT_LT, CARD, FG, FG2, BORDER, DIVIDER,
 
 logger = logging.getLogger(__name__)
 
-VERSION = "1.39"
+VERSION = "1.40"
 _company = os.environ.get("COMPANY_NAME", "")
 APP_TITLE = f"TimeSlip  v{VERSION}"
 HEADER_TITLE = f"{_company} \u2014 Autotask Time Entry" if _company else "Autotask Time Entry"
@@ -36,6 +36,7 @@ class App:
         self.queue = OfflineQueue()
 
         self.root = tk.Tk()
+        self.root.withdraw()  # hide until geometry is set
         self.root.title(APP_TITLE)
         self.root.minsize(MIN_WIDTH, MIN_HEIGHT)
         self.root.resizable(True, True)
@@ -70,6 +71,7 @@ class App:
         # Save geometry on close
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
+        self.root.deiconify()  # show now that geometry is ready
         self.root.lift()
         self.root.attributes("-topmost", True)
         self.root.after(200, lambda: self.root.attributes("-topmost", False))

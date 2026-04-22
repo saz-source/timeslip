@@ -30,6 +30,14 @@ def check_for_update(
     """
     def worker():
         try:
+            import os
+            # Dev-only: set TIMESLIP_SIMULATE_UPDATE=1.99 to force the banner
+            sim = os.environ.get("TIMESLIP_SIMULATE_UPDATE")
+            if sim:
+                on_update_available(sim, RELEASES_PAGE)
+                return
+
+            logger.info("Update check starting — current version: %s", current_version)
             import requests
             r = requests.get(RELEASES_API, timeout=8,
                              headers={"Accept": "application/vnd.github+json"})
@@ -40,14 +48,20 @@ def check_for_update(
             tag = data.get("tag_name", "")
             if not tag:
                 return
-            if _parse_version(tag) > _parse_version(current_version):
+            latest = tag.lstrip("v")
+            update_needed = _parse_version(tag) > _parse_version(current_version)
+            logger.info(
+                "Update check — current: %s  latest: %s  update_needed: %s",
+                current_version, latest, update_needed,
+            )
+            if update_needed:
                 assets = data.get("assets", [])
                 dmg = next((a["browser_download_url"] for a in assets
                             if a.get("name", "").endswith(".dmg")), None)
                 url = dmg or data.get("html_url", RELEASES_PAGE)
-                on_update_available(tag.lstrip("v"), url)
+                on_update_available(latest, url)
             elif on_up_to_date:
-                on_up_to_date(tag.lstrip("v"))
+                on_up_to_date(latest)
         except Exception as exc:
             logger.debug("Update check failed (non-critical): %s", exc)
 

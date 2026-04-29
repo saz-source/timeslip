@@ -104,6 +104,8 @@ class EntryForm(tk.Frame):
             self._start_var.set(p["start_time"])
         if p.get("duration_hours"):
             self._duration_var.set(str(p["duration_hours"]))
+        if p.get("billing_company") in ("JDK", "Foothill"):
+            self._billing_var.set(p["billing_company"])
         if p.get("work_mode") in ("onsite", "offsite", "auto"):
             self._work_mode_var.set(p["work_mode"])
 
@@ -255,6 +257,16 @@ class EntryForm(tk.Frame):
                  font=FONT_SM, bg=CARD, fg=FG2).pack(side=tk.LEFT)
         row += 1
 
+        # ── Billing Company ──
+        field_label(card, "Billing Company", row)
+        self._billing_var = tk.StringVar(value="JDK")
+        bcf = tk.Frame(card, bg=CARD)
+        bcf.grid(row=row, column=1, sticky=tk.EW, pady=5)
+        for val, txt in [("JDK", "JDK Consulting"), ("Foothill", "Foothill Systems")]:
+            ttk.Radiobutton(bcf, text=txt, variable=self._billing_var,
+                            value=val).pack(side=tk.LEFT, padx=(0, 16))
+        row += 1
+
         # ── Work Mode ──
         field_label(card, "Work Mode", row)
         self._work_mode_var = tk.StringVar(value="auto")
@@ -389,6 +401,7 @@ class EntryForm(tk.Frame):
         self._set_today()
         self._start_var.set("9:00 AM")
         self._duration_var.set("1.0")
+        self._billing_var.set("JDK")
         self._work_mode_var.set("auto")
         self._notes_text.delete("1.0", tk.END)
         self._status_var.set("")
@@ -478,6 +491,7 @@ class EntryForm(tk.Frame):
             "duration_hours": duration_hours,
             "raw_notes": raw_notes,
             "work_mode_override": work_mode_override,
+            "billing_company": self._billing_var.get(),
         }
 
     def _animate_dots(self, count):

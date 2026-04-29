@@ -34,12 +34,16 @@ class ReviewScreen(tk.Frame):
         self.app = app
         self._company: Optional[Company] = None
         self._work_types: list = app.cache.get_work_types()
+        self._is_foothill = app.form_data.get("billing_company") == "Foothill"
         # Multi-company state
         self._multi_mode = False
         self._checked_companies: dict = {}   # id -> {company, var}
         self._build()
         self._populate()
-        self._lookup_company()
+        if self._is_foothill:
+            self._setup_foothill_mode()
+        else:
+            self._lookup_company()
 
     def _build(self):
         # Header
@@ -97,8 +101,8 @@ class ReviewScreen(tk.Frame):
         self._company_var = tk.StringVar()
         tk.Label(cf, textvariable=self._company_var,
                  font=FONT_BODY, bg=CARD, fg=FG).pack(side=tk.LEFT)
-        mac_btn(cf, "Change\u2026", self._pick_company, small=True).pack(
-            side=tk.LEFT, padx=8)
+        self._change_btn = mac_btn(cf, "Change\u2026", self._pick_company, small=True)
+        self._change_btn.pack(side=tk.LEFT, padx=8)
         # Multi-company toggle
         self._multi_toggle = mac_btn(
             cf, "+ Multi-company", self._toggle_multi, small=True)
@@ -376,6 +380,12 @@ class ReviewScreen(tk.Frame):
             self._travel_row.grid_remove()
             self._travel_var.set(False)
 
+    def _setup_foothill_mode(self):
+        client = self.app.form_data["client"]
+        self._company_var.set(f"Foothill: {client}")
+        self._change_btn.configure_btn(state="disabled")
+        self._multi_toggle.configure_btn(state="disabled")
+
     def _lookup_company(self):
         name = self.app.form_data["client"]
         def worker():
@@ -493,6 +503,10 @@ class ReviewScreen(tk.Frame):
         if errors:
             messagebox.showwarning("Fix before submitting",
                                    "\n".join(f"  \u2022 {e}" for e in errors))
+            return
+
+        if self._is_foothill:
+            self._submit_foothill()
             return
 
         # Collect all companies to submit to
@@ -651,15 +665,65 @@ class ReviewScreen(tk.Frame):
         self._status_var.set("")
         messagebox.showerror("Submission Failed", f"Autotask API error:\n\n{msg}")
 
+    def _submit_foothill(self):
+        fd = self.app.form_data
+        title = self._title_var.get().strip()
+        summary = self._summary_text.get("1.0", tk.END).strip()
+        work_mode = self._work_mode_var.get()
+
+        if not messagebox.askyesno("Confirm Submission",
+                                   f"Save entry for {fd['client']} to Foothill local storage?"
+                                   "\n\nThis cannot be undone."):
+            return
+
+        self._submit_btn.configure_btn(state="disabled")
+        self._status_var.set("⏳  Saving locally…")
+
+        def worker():
+            try:
+                from src.foothill_storage import save_entry
+                save_entry(
+                    client_name=fd["client"],
+                    entry_date=fd["entry_date"],
+                    start_dt=fd["start_dt"],
+                    end_dt=fd["end_dt"],
+                    duration_hours=fd["duration_hours"],
+                    raw_notes=fd["raw_notes"],
+                    title=title,
+                    summary=summary,
+                    work_mode=work_mode,
+                )
+                self.after(0, self._on_foothill_done)
+            except Exception as exc:
+                err = str(exc)
+                self.after(0, lambda: self._on_foothill_error(err))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_foothill_done(self):
+        self._submit_btn.configure_btn(state="normal")
+        self._status_var.set("")
+        messagebox.showinfo(
+            "Saved",
+            "Entry saved to Foothill local storage.\n\n"
+            "File: ~/.autotask_time_entry/foothill_entries.json",
+        )
+        self.app.show_entry_form()
+
+    def _on_foothill_error(self, msg):
+        self._submit_btn.configure_btn(state="normal")
+        self._status_var.set("")
+        messagebox.showerror("Save Failed", f"Could not save entry:\n\n{msg}")
+
     def _validate(self):
         errors = []
-        if not self._company:
+        if not self._is_foothill and not self._company:
             errors.append("Select a valid company before submitting.")
         if not self._title_var.get().strip():
             errors.append("Ticket title cannot be empty.")
         if not self._summary_text.get("1.0", tk.END).strip():
             errors.append("Summary cannot be empty.")
-        if not self._get_wt_id():
+        if not self._is_foothill and not self._get_wt_id():
             errors.append("Select a Work Type.")
         return errors
 

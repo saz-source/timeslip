@@ -5,7 +5,7 @@ macOS desktop app (Python/tkinter) that converts raw technician notes into
 Autotask tickets + time entries using Claude AI. ~3000 lines of Python.
 
 ## Key facts
-- Current version: v1.26
+- Current version is defined in src/ui/app.py as VERSION.
 - .env lives at ~/.autotask_time_entry/.env
 - Autotask base: webservices5.autotask.net
 - Role ID: 29682834, Queue ID: 29682833

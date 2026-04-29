@@ -445,6 +445,17 @@ def _render_email_draft(client_name: str, invoice_number: int,
 
 # ── PDF export ─────────────────────────────────────────────────────────────────
 
+def _find_chromium() -> str | None:
+    """Return the path to the ms-playwright Chromium binary, or None."""
+    import glob
+    pattern = os.path.expanduser(
+        "~/Library/Caches/ms-playwright/chromium-*/chrome-mac"
+        "/Chromium.app/Contents/MacOS/Chromium"
+    )
+    matches = sorted(glob.glob(pattern))  # sort so highest version is last
+    return matches[-1] if matches else None
+
+
 def _write_pdf(html_path: str, pdf_path: str) -> bool:
     try:
         from playwright.sync_api import sync_playwright
@@ -456,13 +467,21 @@ def _write_pdf(html_path: str, pdf_path: str) -> bool:
         )
         return False
     try:
+        chromium_path = _find_chromium()
+        if chromium_path:
+            logger.info("Using Chromium at: %s", chromium_path)
+        else:
+            logger.info("Chromium not found in ms-playwright cache — using Playwright default")
+
         file_url = "file://" + os.path.abspath(html_path)
+        launch_kwargs = {"executable_path": chromium_path} if chromium_path else {}
         with sync_playwright() as pw:
-            browser = pw.chromium.launch()
+            browser = pw.chromium.launch(**launch_kwargs)
             page = browser.new_page()
             page.goto(file_url, wait_until="networkidle")
             page.pdf(path=pdf_path, format="A4", print_background=True)
             browser.close()
+        logger.info("PDF generated: %s", pdf_path)
         return True
     except Exception as exc:
         msg = str(exc)

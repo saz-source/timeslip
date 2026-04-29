@@ -205,6 +205,30 @@ class ReviewScreen(tk.Frame):
             row=row, column=1, sticky=tk.W, pady=5)
         row += 1
 
+        # ── Billable Rate (Foothill only — hidden for JDK) ──────────────
+        self._rate_lbl = tk.Label(
+            parent, text="Billable Rate:",
+            font=("SF Pro Text", 12), bg=CARD, fg=FG2)
+        self._rate_lbl.grid(row=row, column=0, sticky="w", padx=(14, 10), pady=5)
+        rf = tk.Frame(parent, bg=CARD)
+        rf.grid(row=row, column=1, sticky=tk.W, pady=5)
+        self._rate_var = tk.StringVar(value="150.00")
+        tk.Entry(
+            rf, textvariable=self._rate_var,
+            font=FONT_BODY, width=8,
+            bg=CARD, fg=FG,
+            insertbackground=ACCENT, insertwidth=2,
+            relief=tk.FLAT, bd=0,
+            highlightthickness=1,
+            highlightbackground=BORDER,
+            highlightcolor=ACCENT,
+        ).pack(side=tk.LEFT)
+        tk.Label(rf, text="  $/hr", font=FONT_SM, bg=CARD, fg=FG2).pack(side=tk.LEFT)
+        self._rate_frame = rf
+        self._rate_lbl.grid_remove()
+        rf.grid_remove()
+        row += 1
+
         field_label(parent, "Summary", row, top=True)
         parent.rowconfigure(row, weight=1)
         sf = tk.Frame(parent, bg=CARD)
@@ -395,6 +419,8 @@ class ReviewScreen(tk.Frame):
         self._company_var.set(f"Foothill: {client}")
         self._change_btn.configure_btn(state="disabled")
         self._multi_toggle.configure_btn(state="disabled")
+        self._rate_lbl.grid()
+        self._rate_frame.grid()
         tk.Checkbutton(
             self._foothill_opts,
             text="Generate invoice package after submit",
@@ -692,6 +718,7 @@ class ReviewScreen(tk.Frame):
         summary = self._summary_text.get("1.0", tk.END).strip()
         work_mode = self._work_mode_var.get()
         auto_invoice = self._foothill_invoice_var.get()
+        billable_rate = float(self._rate_var.get())
 
         if not messagebox.askyesno("Confirm Submission",
                                    f"Save entry for {fd['client']} to Foothill local storage?"
@@ -717,6 +744,7 @@ class ReviewScreen(tk.Frame):
                     title=title,
                     summary=summary,
                     work_mode=work_mode,
+                    billable_rate=billable_rate,
                 )
             except Exception as exc:
                 err = str(exc)
@@ -790,6 +818,12 @@ class ReviewScreen(tk.Frame):
             errors.append("Summary cannot be empty.")
         if not self._is_foothill and not self._get_wt_id():
             errors.append("Select a Work Type.")
+        if self._is_foothill:
+            try:
+                if float(self._rate_var.get()) <= 0:
+                    raise ValueError
+            except ValueError:
+                errors.append("Billable rate must be a positive number (e.g. 150.00).")
         return errors
 
     def _get_wt_id(self):

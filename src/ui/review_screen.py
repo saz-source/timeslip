@@ -2,8 +2,13 @@
 Screen 2 — Review Screen (MANDATORY). Light theme, multi-company support.
 Nothing submitted until user clicks Approve & Submit.
 """
+import logging
+import os
+import subprocess
 import threading
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 from tkinter import messagebox, simpledialog
 import tkinter as tk
 from tkinter import ttk
@@ -79,8 +84,13 @@ class ReviewScreen(tk.Frame):
                  font=FONT_BOLD, bg=BG, fg=ACCENT).pack(
             anchor=tk.W, padx=16, pady=(4, 0))
 
+        # Foothill-only options (hidden until _setup_foothill_mode populates it)
+        self._foothill_invoice_var = tk.BooleanVar(value=True)
+        self._foothill_opts = tk.Frame(self, bg=BG)
+
         # Buttons
-        tk.Frame(self, bg=DIVIDER, height=1).pack(fill=tk.X, pady=(6, 0))
+        self._footer_divider = tk.Frame(self, bg=DIVIDER, height=1)
+        self._footer_divider.pack(fill=tk.X, pady=(6, 0))
         bf = tk.Frame(self, bg=BG)
         bf.pack(fill=tk.X, padx=16, pady=8)
         mac_btn(bf, "\u2190 Back / Edit", self._go_back).pack(side=tk.LEFT)
@@ -385,6 +395,17 @@ class ReviewScreen(tk.Frame):
         self._company_var.set(f"Foothill: {client}")
         self._change_btn.configure_btn(state="disabled")
         self._multi_toggle.configure_btn(state="disabled")
+        tk.Checkbutton(
+            self._foothill_opts,
+            text="Generate invoice package after submit",
+            variable=self._foothill_invoice_var,
+            font=FONT_BODY, bg=BG, fg=FG,
+            activebackground=BG, selectcolor=BG,
+        ).pack(side=tk.LEFT)
+        self._foothill_opts.pack(
+            fill=tk.X, padx=16, pady=(4, 0),
+            after=self._footer_divider,
+        )
 
     def _lookup_company(self):
         name = self.app.form_data["client"]
@@ -670,6 +691,7 @@ class ReviewScreen(tk.Frame):
         title = self._title_var.get().strip()
         summary = self._summary_text.get("1.0", tk.END).strip()
         work_mode = self._work_mode_var.get()
+        auto_invoice = self._foothill_invoice_var.get()
 
         if not messagebox.askyesno("Confirm Submission",
                                    f"Save entry for {fd['client']} to Foothill local storage?"
@@ -677,7 +699,10 @@ class ReviewScreen(tk.Frame):
             return
 
         self._submit_btn.configure_btn(state="disabled")
-        self._status_var.set("⏳  Saving locally…")
+        self._status_var.set(
+            "⏳  Saving and generating invoice…"
+            if auto_invoice else "⏳  Saving locally…"
+        )
 
         def worker():
             try:
@@ -693,21 +718,61 @@ class ReviewScreen(tk.Frame):
                     summary=summary,
                     work_mode=work_mode,
                 )
-                self.after(0, self._on_foothill_done)
             except Exception as exc:
                 err = str(exc)
                 self.after(0, lambda: self._on_foothill_error(err))
+                return
+
+            exports = None
+            export_err = None
+            if auto_invoice:
+                try:
+                    from src.foothill_invoice_export import export_unbilled
+                    logger.info("Foothill invoice export starting for %s", fd["client"])
+                    exports = export_unbilled()
+                    logger.info("Foothill invoice export complete: %d result(s)", len(exports) if exports else 0)
+                    if exports and exports[0].get("email_path"):
+                        logger.info("Email draft: %s", exports[0]["email_path"])
+                except Exception as exc:
+                    export_err = str(exc)
+                    logger.exception("Foothill invoice export failed")
+
+            self.after(0, lambda: self._on_foothill_done(exports, export_err))
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _on_foothill_done(self):
+    def _on_foothill_done(self, exports=None, export_err=None):
         self._submit_btn.configure_btn(state="normal")
         self._status_var.set("")
-        messagebox.showinfo(
-            "Saved",
-            "Entry saved to Foothill local storage.\n\n"
-            "File: ~/.autotask_time_entry/foothill_entries.json",
-        )
+        if exports:
+            r = exports[0]
+            folder = os.path.dirname(r["txt_path"])
+            msg = (
+                f"Invoice #{r['invoice_number']}  —  {r['client_name']}\n"
+                f"Invoice package created successfully.\n"
+                f"\n"
+                f"Open the exports folder to review:\n"
+                f"{folder}"
+            )
+            messagebox.showinfo("Saved — Invoice Generated", msg)
+            try:
+                subprocess.run(["open", folder], check=False)
+            except Exception:
+                pass
+        elif export_err:
+            messagebox.showwarning(
+                "Saved — Invoice Export Failed",
+                "Entry was saved successfully.\n\n"
+                f"Invoice export failed:\n{export_err}\n\n"
+                "You can re-run the export later with:\n"
+                "  python -m src.foothill_invoice_export",
+            )
+        else:
+            messagebox.showinfo(
+                "Saved",
+                "Entry saved to Foothill local storage.\n\n"
+                "File: ~/.autotask_time_entry/foothill_entries.json",
+            )
         self.app.show_entry_form()
 
     def _on_foothill_error(self, msg):

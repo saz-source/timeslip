@@ -401,6 +401,48 @@ def _render_html(client_name: str, invoice_number: int,
 """
 
 
+# ── Email draft ───────────────────────────────────────────────────────────────
+
+def _render_email_draft(client_name: str, invoice_number: int,
+                        entries: list[dict], generated: str,
+                        pdf_path: str | None, html_path: str,
+                        csv_path: str) -> str:
+    from datetime import date as _date, timedelta
+    due_date = (_date.fromisoformat(generated) + timedelta(days=15)).isoformat()
+    total_amount = sum(e["billable_amount"] for e in entries)
+
+    # Primary attachment: PDF if available, otherwise fall back to HTML
+    primary_attachment = os.path.basename(pdf_path if pdf_path else html_path)
+
+    return (
+        f"Subject: Foothill Systems Invoice #{invoice_number}\n"
+        f"\n"
+        f"Hi {client_name},\n"
+        f"\n"
+        f"Please find attached invoice #{invoice_number} for recent Foothill Systems support work.\n"
+        f"\n"
+        f"Total: ${total_amount:.2f}\n"
+        f"Payment Terms: Net 15\n"
+        f"Payment Due: {due_date}\n"
+        f"\n"
+        f"Please let me know if you have any questions.\n"
+        f"\n"
+        f"Thanks,\n"
+        f"Mike\n"
+        f"Foothill Systems\n"
+        f"Secure by Design\n"
+        f"mike@foothill.systems\n"
+        f"(323) 372-6644\n"
+        f"\n"
+        f"Attachments to send:\n"
+        f"- {primary_attachment}\n"
+        f"\n"
+        f"Internal reference:\n"
+        f"- HTML: {html_path}\n"
+        f"- CSV:  {csv_path}\n"
+    )
+
+
 # ── PDF export ─────────────────────────────────────────────────────────────────
 
 def _write_pdf(html_path: str, pdf_path: str) -> bool:
@@ -442,7 +484,7 @@ def export_unbilled() -> list[dict]:
 
     Returns a list of export records:
         {"client_name", "invoice_number", "txt_path", "csv_path",
-         "html_path", "pdf_path", "entry_count"}
+         "html_path", "pdf_path", "email_path", "entry_count"}
         pdf_path is None if PDF generation was skipped or failed.
 
     Raises on any I/O error before entries are marked invoiced.
@@ -474,10 +516,11 @@ def export_unbilled() -> list[dict]:
         client_name = client_names[cid]
         prefix = f"invoice_{inv_num}_{cid}_{generated}"
 
-        txt_path  = os.path.join(_EXPORTS_DIR, f"{prefix}.txt")
-        csv_path  = os.path.join(_EXPORTS_DIR, f"{prefix}.csv")
-        html_path = os.path.join(_EXPORTS_DIR, f"{prefix}.html")
-        pdf_path  = os.path.join(_EXPORTS_DIR, f"{prefix}.pdf")
+        txt_path   = os.path.join(_EXPORTS_DIR, f"{prefix}.txt")
+        csv_path   = os.path.join(_EXPORTS_DIR, f"{prefix}.csv")
+        html_path  = os.path.join(_EXPORTS_DIR, f"{prefix}.html")
+        pdf_path   = os.path.join(_EXPORTS_DIR, f"{prefix}.pdf")
+        email_path = os.path.join(_EXPORTS_DIR, f"{prefix}_email.txt")
 
         # Write TXT, CSV, HTML before advancing invoice state
         with open(txt_path, "w") as f:
@@ -489,6 +532,13 @@ def export_unbilled() -> list[dict]:
         # PDF is best-effort — HTML is already written so it's never lost
         pdf_ok = _write_pdf(html_path, pdf_path)
 
+        # Email draft written after PDF so it can reference the pdf_path correctly
+        with open(email_path, "w") as f:
+            f.write(_render_email_draft(
+                client_name, inv_num, entries, generated,
+                pdf_path if pdf_ok else None, html_path, csv_path,
+            ))
+
         _increment_invoice_number()
         pending_marks.append(([e["entry_id"] for e in entries], inv_num))
 
@@ -499,6 +549,7 @@ def export_unbilled() -> list[dict]:
             "csv_path": csv_path,
             "html_path": html_path,
             "pdf_path": pdf_path if pdf_ok else None,
+            "email_path": email_path,
             "entry_count": len(entries),
         })
 
@@ -524,9 +575,10 @@ if __name__ == "__main__":
             print(f"  {r['entry_count']} entr{'y' if r['entry_count'] == 1 else 'ies'}")
             print(f"  TXT:  {r['txt_path']}")
             print(f"  CSV:  {r['csv_path']}")
-            print(f"  HTML: {r['html_path']}")
+            print(f"  HTML:  {r['html_path']}")
             if r["pdf_path"]:
-                print(f"  PDF:  {r['pdf_path']}")
+                print(f"  PDF:   {r['pdf_path']}")
             else:
-                print("  PDF:  (skipped — see log for details)")
+                print("  PDF:   (skipped — see log for details)")
+            print(f"  EMAIL: {r['email_path']}")
         print(f"\n{len(results)} invoice(s) exported.")
